@@ -8,8 +8,32 @@ import mlflow
 import mlflow.sklearn
 from dotenv import load_dotenv
 import os
+import time
+import urllib.request
 
 load_dotenv()
+
+def wait_for_mlflow(uri: str, timeout: int = 60) -> None:
+    """
+    Blocks until MLflow is reachable or timeout is exceeded.
+    Prevents train.py from crashing when Docker starts the api
+    container before MLflow is fully ready to accept connections.
+    """
+    health_url = f"{uri}/health"
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(health_url, timeout=3)
+            print(f"MLflow is ready at {uri}")
+            return
+        except Exception:
+            print("Waiting for MLflow...")
+            time.sleep(3)
+
+    raise RuntimeError(f"MLflow not reachable at {uri} after {timeout}s")
+
+
 
 
 def generate_reference_data(n_samples: int = 2000, seed: int = 42) -> pd.DataFrame:
@@ -42,7 +66,12 @@ def train_and_register():
     MLflow stores: parameters, metrics, and the serialized model artifact.
     Think of it as 'git commit' but for ML models.
     """
-    mlflow.set_tracking_uri(os.getenv("MLFLOW_TRACKING_URI"))
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "sqlite:///mlruns.db")
+    
+    # Wait until MLflow is actually ready — not just "healthy"
+    wait_for_mlflow(tracking_uri)
+    
+    mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment("necropsy")
 
     # 1. Generate reference data

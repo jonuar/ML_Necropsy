@@ -41,4 +41,7 @@ out
 venv/
 .venv/
 pycache/
+mlruns/
+mlartifacts/
+data/
 

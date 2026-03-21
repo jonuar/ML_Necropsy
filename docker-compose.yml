@@ -1,0 +1,78 @@
+services:
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:///mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    networks:
+      - necropsy-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - MODEL_NAME=necropsy-classifier
+      - DRIFT_THRESHOLD_PSI=0.20
+      - DRIFT_THRESHOLD_SEVERITY=0.70
+      - REFERENCE_DATA_PATH=data/reference.csv
+      - PRODUCTION_DATA_PATH=data/production_log.csv
+    volumes:
+      - ./data:/app/data
+      - ./reports:/app/reports
+    networks:
+      - necropsy-net
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    restart: on-failure
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - necropsy-net
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=necropsy
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - necropsy-net
+    depends_on:
+      - prometheus
+    restart: on-failure
+
+networks:
+  necropsy-net:
+    driver: bridge
+
+volumes:
+  mlflow_data:
+  grafana_data:
