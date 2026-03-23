@@ -1,0 +1,82 @@
+name: Retrain on drift
+
+on:
+  # Triggered manually from GitHub UI — for testing
+  workflow_dispatch:
+
+  # Triggered automatically when the autopsy report
+  # is pushed to the repo with action: retrain
+  push:
+    paths:
+      - "reports/latest_autopsy.md"
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check if retraining is needed
+        id: check
+        run: |
+          python - <<'EOF'
+          import json, sys, os
+
+          report_path = "reports/latest_autopsy.md"
+
+          # Read the autopsy report
+          if not os.path.exists(report_path):
+              print("No autopsy report found — skipping retraining")
+              print("RETRAIN=false", file=open(os.environ["GITHUB_OUTPUT"], "a"))
+              sys.exit(0)
+
+          with open(report_path) as f:
+              content = f.read()
+
+          # Check if recommended action is retrain
+          if "retrain" in content.lower() and "recommended action" in content.lower():
+              print("Retraining needed — drift detected")
+              print("RETRAIN=true", file=open(os.environ["GITHUB_OUTPUT"], "a"))
+          else:
+              print("No retraining needed — model stable")
+              print("RETRAIN=false", file=open(os.environ["GITHUB_OUTPUT"], "a"))
+          EOF
+
+      - name: Retrain model
+        if: steps.check.outputs.RETRAIN == 'true'
+        env:
+          # Uses local SQLite MLflow in CI — no external server needed
+          MLFLOW_TRACKING_URI: sqlite:///mlruns.db
+          MODEL_NAME: necropsy-classifier
+          REFERENCE_DATA_PATH: data/reference.csv
+          PRODUCTION_DATA_PATH: data/production_log.csv
+          DRIFT_THRESHOLD_PSI: "0.20"
+          DRIFT_THRESHOLD_SEVERITY: "0.70"
+        run: python mlops/train.py
+
+      - name: Evaluate and promote
+        if: steps.check.outputs.RETRAIN == 'true'
+        env:
+          MLFLOW_TRACKING_URI: sqlite:///mlruns.db
+          MODEL_NAME: necropsy-classifier
+        run: python mlops/promote.py
+
+      - name: Upload retrain artifacts
+        if: steps.check.outputs.RETRAIN == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrain-artifacts
+          path: |
+            mlruns/
+            data/reference.csv
+            reports/

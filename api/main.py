@@ -1,4 +1,5 @@
 import os
+import subprocess
 import pandas as pd
 import mlflow.sklearn
 from fastapi import FastAPI, HTTPException
@@ -195,6 +196,19 @@ def run_autopsy():
     # Print to server logs — visible in Docker logs too
     print(render_terminal_report(report))
 
+    if decision.action == "retrain":
+        try:
+            subprocess.run(["git", "add", "reports/latest_autopsy.md"], check=True)
+            subprocess.run(
+                ["git", "commit", "-m", f"chore: autopsy report — severity={report.severity_score:.2f} action=retrain"],
+                check=True,
+            )
+            subprocess.run(["git", "push"], check=True)
+            print("Autopsy report pushed — GitHub Actions will trigger retraining")
+        except subprocess.CalledProcessError as e:
+            print(f"Could not push report automatically: {e}")
+            print("Push reports/latest_autopsy.md manually to trigger retraining")
+
     return AutopsyResponse(
         drift_detected=report.drift_detected,
         severity_score=report.severity_score,
@@ -206,6 +220,8 @@ def run_autopsy():
         decision_reason=decision.reason,
         production_rows=report.production_rows,
     )
+
+
 
 
 @app.get("/autopsy/report")
