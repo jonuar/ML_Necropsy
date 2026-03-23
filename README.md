@@ -39,7 +39,7 @@ New model promoted to production if metrics improve
 ## Quick start
 
 ```bash
-git clone https://github.com/joshuanunez/necropsy
+git clone https://github.com/jonuar/necropsy
 cd necropsy
 docker compose up --build
 ```
