@@ -1,5 +1,4 @@
 # Necropsy
-
 Automated post-mortem analysis for ML models in production. Detects data drift, diagnoses root cause, and triggers self-healing pipelines; no human intervention required.
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
